@@ -53,6 +53,7 @@ Options:
 - `--username <user>` — FitTrackee username (env: `FITTRACKEE_USERNAME`)
 - `--password <pass>` — FitTrackee password (env: `FITTRACKEE_PASSWORD`)
 - `--activity-mapping-file <path>` — Custom activity type TOML mapping file (default: built-in)
+- `--with-gpx-only` — Only sync activities that have a matching GPX/FIT/TCX file. Files without GPS data (e.g. indoor workouts) are also skipped.
 - `--dry-run` — Show what would be synced without making changes
 
 The command reads `*_summarizedActivities.json` files from the extracted archive, maps Garmin activity types to FitTrackee sports, and creates workouts via the FitTrackee API. Activities already present (matched by start time ±10 seconds) are skipped.
