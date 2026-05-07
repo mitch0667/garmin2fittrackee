@@ -6,6 +6,10 @@ build-backend = "hatchling.build"
 name = "garmin2fittrackee"
 version = "0.1.0"
 description = "CLI tool to process Garmin data exports and push activities to FitTrackee"
+license = "MIT"
+authors = [
+  {name = "mitch0667", email = "mitch0667@gmail.com"},
+]
 requires-python = ">=3.12"
 dependencies = [
     "typer>=0.15.0",
