@@ -1,3 +1,4 @@
+import logging
 import struct
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +13,7 @@ from garmin2fittrackee.converter import (
     _build_description,
     _format_activity_counters,
     _format_equipment_counters,
+    _format_workout_date,
     check_duplicate_labels,
     convert_activity,
     convert_gear,
@@ -188,6 +190,51 @@ class TestSyncEquipments:
         with pytest.raises(GearError, match="Duplicate gear labels"):
             sync_equipments(gears, client, MAPPING, FT_TYPES)
 
+    def test_force_active_overrides_retired_status(self) -> None:
+        client = MagicMock()
+        client.get_equipments.return_value = []
+        client.create_equipment.return_value = _ft_equipment()
+
+        gears = [_gear(status="retired")]
+        result = sync_equipments(
+            gears, client, MAPPING, FT_TYPES, force_active=True
+        )
+        assert result.created == 1
+        create_arg = client.create_equipment.call_args[0][0]
+        assert create_arg.is_active is True
+
+    def test_force_active_on_update(self) -> None:
+        existing = _ft_equipment(
+            description="Synced from Garmin (original type: Shoes)",
+            is_active=False,
+        )
+        client = MagicMock()
+        client.get_equipments.return_value = [existing]
+        client.update_equipment.return_value = existing
+
+        gears = [_gear(status="retired")]
+        result = sync_equipments(
+            gears, client, MAPPING, FT_TYPES, force_active=True
+        )
+        assert result.updated == 1
+        patch = client.update_equipment.call_args[0][1]
+        assert patch.is_active is True
+
+    def test_force_active_no_change_when_already_active(self) -> None:
+        existing = _ft_equipment(
+            description="Synced from Garmin (original type: Shoes)",
+            is_active=True,
+        )
+        client = MagicMock()
+        client.get_equipments.return_value = [existing]
+
+        gears = [_gear(status="active")]
+        result = sync_equipments(
+            gears, client, MAPPING, FT_TYPES, force_active=True
+        )
+        assert result.skipped == 1
+        client.update_equipment.assert_not_called()
+
 
 class TestReSyncEquipments:
     def test_recreates_deleted_equipment(self) -> None:
@@ -311,6 +358,23 @@ SPORTS = [
 ACTIVITY_MAPPING = {"running": "Running", "cycling": "Cycling (Sport)"}
 
 
+class TestFormatWorkoutDate:
+    def test_strips_seconds_from_standard_format(self) -> None:
+        assert _format_workout_date("2024-01-15 08:00:00") == "2024-01-15 08:00"
+
+    def test_handles_iso_format(self) -> None:
+        assert _format_workout_date("2024-01-15T08:00:00") == "2024-01-15 08:00"
+
+    def test_already_no_seconds_truncates(self) -> None:
+        assert _format_workout_date("2024-01-15 08:00") == "2024-01-15 08:00"
+
+    def test_unknown_format_truncates_to_16_chars(self) -> None:
+        assert _format_workout_date("2024/01/15 08:00") == "2024/01/15 08:00"
+
+    def test_short_string_passed_through(self) -> None:
+        assert _format_workout_date("2024-01-15") == "2024-01-15"
+
+
 class TestConvertActivity:
     def test_convert_running(self) -> None:
         activity = _activity()
@@ -318,7 +382,7 @@ class TestConvertActivity:
         assert result.sport_id == 5
         assert result.duration == 1800
         assert result.distance == 5.0
-        assert result.workout_date == "2024-01-15 08:00:00"
+        assert result.workout_date == "2024-01-15 08:00"
         assert result.equipment_ids is None
 
     def test_convert_with_title(self) -> None:
@@ -1417,3 +1481,174 @@ class TestFormatEquipmentCounters:
     def test_zero_total(self) -> None:
         result = _format_equipment_counters(0, 0, 0, 0, 0)
         assert "0 / 0" in result
+
+
+class TestActivityMappingLogs:
+    def test_logs_activity_to_file_mapping_with_file(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        client = MagicMock()
+        client.get_all_workouts.return_value = []
+        client.create_workout_with_file.return_value = FitTrackeeWorkout(
+            id="new", sport_id=5, workout_date="2024-01-15 08:00:00",
+            duration="0:30:00",
+        )
+
+        start = datetime(2024, 1, 15, 7, 0, 0, tzinfo=timezone.utc)
+        gpx_path = Path("/fake/run.gpx")
+        files_table: dict[datetime, Path] = {start: gpx_path}
+
+        activities = [_activity(title="Morning Run")]
+        with caplog.at_level(logging.INFO, logger="garmin2fittrackee.converter"):
+            sync_activities(
+                activities, client, ACTIVITY_MAPPING, SPORTS, files_table,
+            )
+
+        mapping_msgs = [
+            r for r in caplog.records if "-> file:" in r.message
+        ]
+        assert len(mapping_msgs) == 1
+        assert "id=123" in mapping_msgs[0].message
+        assert "Morning Run" in mapping_msgs[0].message
+        assert "json_start_local=2024-01-15 08:00:00" in mapping_msgs[0].message
+        assert "json_start_gmt=2024-01-15 07:00:00" in mapping_msgs[0].message
+        assert "run.gpx" in mapping_msgs[0].message
+
+    def test_logs_activity_to_file_mapping_no_file(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        client = MagicMock()
+        client.get_all_workouts.return_value = []
+        client.create_workout_no_gpx.return_value = FitTrackeeWorkout(
+            id="new", sport_id=5, workout_date="2024-01-15 08:00:00",
+            duration="0:30:00",
+        )
+
+        activities = [_activity(title="No File Run")]
+        with caplog.at_level(logging.INFO, logger="garmin2fittrackee.converter"):
+            sync_activities(
+                activities, client, ACTIVITY_MAPPING, SPORTS, {},
+            )
+
+        mapping_msgs = [r for r in caplog.records if "-> file:" in r.message]
+        assert len(mapping_msgs) == 1
+        assert "No File Run" in mapping_msgs[0].message
+        assert "file: none" in mapping_msgs[0].message
+
+
+class TestWorkoutDateLogs:
+    def test_logs_workout_date_on_create(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        client = MagicMock()
+        client.get_all_workouts.return_value = []
+        client.create_workout_no_gpx.return_value = FitTrackeeWorkout(
+            id="new", sport_id=5, workout_date="2024-01-15 08:00:00",
+            duration="0:30:00",
+        )
+
+        activities = [_activity()]
+        with caplog.at_level(logging.INFO, logger="garmin2fittrackee.converter"):
+            sync_activities(
+                activities, client, ACTIVITY_MAPPING, SPORTS, {},
+            )
+
+        date_msgs = [r for r in caplog.records if "pushing workout_date=" in r.message]
+        assert len(date_msgs) == 1
+        assert "workout_date='2024-01-15 08:00'" in date_msgs[0].message
+        assert "id=123" in date_msgs[0].message
+
+    def test_logs_workout_date_on_update(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        client = MagicMock()
+        client.get_all_workouts.return_value = [
+            FitTrackeeWorkout(
+                id="w1", sport_id=5, workout_date="2024-01-15 07:00:00",
+                duration="0:30:00",
+                title="Old Title",
+                description="Synced from Garmin (type: running)",
+            )
+        ]
+        client.update_workout.return_value = FitTrackeeWorkout(
+            id="w1", sport_id=5, workout_date="2024-01-15 07:00:00",
+            duration="0:30:00", title="New Title",
+        )
+
+        activities = [_activity(title="New Title")]
+        with caplog.at_level(logging.INFO, logger="garmin2fittrackee.converter"):
+            sync_activities(
+                activities, client, ACTIVITY_MAPPING, SPORTS, {},
+            )
+
+        date_msgs = [
+            r
+            for r in caplog.records
+            if "pushing workout_date=" in r.message
+            and "update" in r.message
+        ]
+        assert len(date_msgs) == 1
+        assert "workout_date='2024-01-15 08:00'" in date_msgs[0].message
+        assert "id=123" in date_msgs[0].message
+
+    def test_logs_workout_date_on_duplicate_skip(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        client = MagicMock()
+        client.get_all_workouts.return_value = [
+            FitTrackeeWorkout(
+                id="w1", sport_id=5, workout_date="2024-01-15 07:00:00",
+                duration="0:30:00",
+                title="Morning Run",
+                description="Synced from Garmin (type: running)",
+                equipment_ids=None,
+            )
+        ]
+
+        activities = [_activity(title="Morning Run")]
+        with caplog.at_level(logging.INFO, logger="garmin2fittrackee.converter"):
+            sync_activities(
+                activities, client, ACTIVITY_MAPPING, SPORTS, {},
+            )
+
+        date_msgs = [
+            r
+            for r in caplog.records
+            if "pushing workout_date=" in r.message
+            and "update" in r.message
+        ]
+        assert len(date_msgs) == 1
+        assert "workout_date='2024-01-15 08:00'" in date_msgs[0].message
+
+    def test_logs_workout_date_with_file(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        gpx = """<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk><trkseg>
+    <trkpt lat="48.8566" lon="2.3522"><time>2024-01-15T07:00:00Z</time></trkpt>
+  </trkseg></trk>
+</gpx>"""
+        gpx_path = tmp_path / "test.gpx"
+        gpx_path.write_text(gpx)
+
+        client = MagicMock()
+        client.get_all_workouts.return_value = []
+        client.create_workout_with_file.return_value = FitTrackeeWorkout(
+            id="new", sport_id=5, workout_date="2024-01-15 08:00:00",
+            duration="0:30:00",
+        )
+
+        start = datetime(2024, 1, 15, 7, 0, 0, tzinfo=timezone.utc)
+        files_table: dict[datetime, Path] = {start: gpx_path}
+
+        activities = [_activity()]
+        with caplog.at_level(logging.INFO, logger="garmin2fittrackee.converter"):
+            sync_activities(
+                activities, client, ACTIVITY_MAPPING, SPORTS, files_table,
+                with_gpx_only=True,
+            )
+
+        date_msgs = [r for r in caplog.records if "pushing workout_date=" in r.message]
+        assert len(date_msgs) == 1
+        assert "workout_date='2024-01-15 08:00'" in date_msgs[0].message

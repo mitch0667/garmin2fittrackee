@@ -137,19 +137,15 @@ FITTRACKEE_PASSWORD=secret \
 Requires `curl` and `jq`. Paginates through all workouts and deletes them one by one.
 
 ## Known Issues
-1. **Workout upload fails with "invalid format for workout date"** — Some activities fail to upload with an HTTP 500 error reporting an invalid date format.
+1. **Workout upload fails with "invalid ascent or descent"** — Activities with elevation data (skiing, treadmill with incline, training plans) fail to upload due to FitTrackee rejecting negative or inconsistent ascent/descent values.
 
-2. **Workout upload fails with "invalid ascent or descent"** — Activities with elevation data (skiing, treadmill with incline, training plans) fail to upload due to FitTrackee rejecting negative or inconsistent ascent/descent values.
+2. **Workout upload fails when FIT file exceeds FitTrackee size limit** — Large FIT files (>1MB) from long activities (e.g., trail runs) are rejected with HTTP 413. The workout is not created at all.
 
-3. **Workout upload fails when FIT file exceeds FitTrackee size limit** — Large FIT files (>1MB) from long activities (e.g., trail runs) are rejected with HTTP 413. The workout is not created at all.
+3. **Workout upload fails for activities without GPS data** — Activities recorded without GPS (indoor workouts, treadmill runs) fail with "no valid segments with GPS found in fit file". The tool should fall back to creating the workout without a trace file.
 
-4. **Workout upload fails for activities without GPS data** — Activities recorded without GPS (indoor workouts, treadmill runs) fail with "no valid segments with GPS found in fit file". The tool should fall back to creating the workout without a trace file.
+4. **Workout upload fails with "only one piece of equipment per type"** — Activities associated with multiple equipment items of the same type (e.g., two pairs of shoes) are rejected by FitTrackee. The tool should send at most one equipment item per type.
 
-5. **Workout upload fails with "only one piece of equipment per type"** — Activities associated with multiple equipment items of the same type (e.g., two pairs of shoes) are rejected by FitTrackee. The tool should send at most one equipment item per type.
-
-   6. **Workout upload fails when equipment is inactive** — Workouts fail to create when the associated equipment is marked as inactive in FitTrackee. Using the `full-sync` command handles this by force-activating equipment before syncing activities, then restoring the actual state.
-
-7. **Mismatch in duration, distance, and max speed** — Synced activities may show incorrect values for duration, distance, max speed, and other metrics compared to the original Garmin data. FitTrackee may rebuild it from .gpx, .tcx and .fit files with some variations compared to Garmin.
+5. **Mismatch in duration, distance, and max speed** — Synced activities may show incorrect values for duration, distance, max speed, and other metrics compared to the original Garmin data. FitTrackee may rebuild it from .gpx, .tcx and .fit files with some variations compared to Garmin.
 
 ## Development
 

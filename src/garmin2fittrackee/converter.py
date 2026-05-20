@@ -323,6 +323,17 @@ def _build_description(activity: GarminActivity) -> str:
     return " | ".join(parts)
 
 
+def _format_workout_date(date_str: str) -> str:
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return date_str[:16]
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
 def convert_activity(
     activity: GarminActivity,
     sport_id: int,
@@ -332,7 +343,7 @@ def convert_activity(
         sport_id=sport_id,
         duration=activity.duration_seconds,
         distance=activity.distance_km,
-        workout_date=activity.start_time_local,
+        workout_date=_format_workout_date(activity.start_time_local),
         title=activity.title,
         description=_build_description(activity),
         ascent=activity.elevation_gain_m if activity.elevation_gain_m > 0 else None,
