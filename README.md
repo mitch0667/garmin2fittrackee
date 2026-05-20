@@ -139,7 +139,7 @@ Requires `curl` and `jq`. Paginates through all workouts and deletes them one by
 ## Known Issues
 1. **Workout upload fails with "invalid ascent or descent"** — Activities with elevation data (skiing, treadmill with incline, training plans) fail to upload due to FitTrackee rejecting negative or inconsistent ascent/descent values.
 
-2. **Workout upload fails when FIT file exceeds FitTrackee size limit** — Large FIT files (>1MB) from long activities (e.g., trail runs) are rejected with HTTP 413. The workout is not created at all.
+2. **Workout upload fails when FIT file exceeds FitTrackee size limit** — Large FIT files from long activities (e.g., trail runs) are rejected with HTTP 413. The default max upload size is 1MB, but it can be reconfigured through the FitTrackee UI or API with admin rights. The workout is not created at all.
 
 3. **Workout upload fails for activities without GPS data** — Activities recorded without GPS (indoor workouts, treadmill runs) fail with "no valid segments with GPS found in fit file". The tool should fall back to creating the workout without a trace file.
 
