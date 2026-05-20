@@ -63,8 +63,26 @@ def extract(
             help="Path to log file (env: LOG_FILE)",
         ),
     ] = None,
+    log_level: Annotated[
+        Optional[str],
+        typer.Option(
+            "--log-level",
+            help="File log level (env: LOG_LEVEL)",
+        ),
+    ] = None,
+    console_log_level: Annotated[
+        Optional[str],
+        typer.Option(
+            "--console-log-level",
+            help="Console log level (env: CONSOLE_LOG_LEVEL)",
+        ),
+    ] = None,
 ) -> None:
-    setup_logging(log_file or default_log_file())
+    setup_logging(
+        log_file or default_log_file(),
+        file_log_level=log_level,
+        console_log_level=console_log_level,
+    )
     folder = extract_folder or DEFAULT_EXTRACT_FOLDER
     logger.info("Extract folder: %s", folder)
 
@@ -172,6 +190,13 @@ def sync_equipments_cmd(
             help="Show what would be synced without making changes",
         ),
     ] = False,
+    force_active: Annotated[
+        bool,
+        typer.Option(
+            "--force-active",
+            help="Force all equipments as active regardless of Garmin status",
+        ),
+    ] = False,
     log_file: Annotated[
         Optional[Path],
         typer.Option(
@@ -179,8 +204,26 @@ def sync_equipments_cmd(
             help="Path to log file (env: LOG_FILE)",
         ),
     ] = None,
+    log_level: Annotated[
+        Optional[str],
+        typer.Option(
+            "--log-level",
+            help="File log level (env: LOG_LEVEL)",
+        ),
+    ] = None,
+    console_log_level: Annotated[
+        Optional[str],
+        typer.Option(
+            "--console-log-level",
+            help="Console log level (env: CONSOLE_LOG_LEVEL)",
+        ),
+    ] = None,
 ) -> None:
-    setup_logging(log_file or default_log_file())
+    setup_logging(
+        log_file or default_log_file(),
+        file_log_level=log_level,
+        console_log_level=console_log_level,
+    )
 
     try:
         resolved_path = _resolve_archive_path(archive_path)
@@ -217,7 +260,8 @@ def sync_equipments_cmd(
     try:
         ft_types = [] if dry_run else client.get_equipment_types()
         result = sync_equipments(
-            all_gears, client, mapping, ft_types, dry_run=dry_run
+            all_gears, client, mapping, ft_types,
+            dry_run=dry_run, force_active=force_active,
         )
         typer.echo(
             f"Equipment sync complete: {result.created} created, "
@@ -288,8 +332,26 @@ def sync_activities_cmd(
             help="Path to log file (env: LOG_FILE)",
         ),
     ] = None,
+    log_level: Annotated[
+        Optional[str],
+        typer.Option(
+            "--log-level",
+            help="File log level (env: LOG_LEVEL)",
+        ),
+    ] = None,
+    console_log_level: Annotated[
+        Optional[str],
+        typer.Option(
+            "--console-log-level",
+            help="Console log level (env: CONSOLE_LOG_LEVEL)",
+        ),
+    ] = None,
 ) -> None:
-    setup_logging(log_file or default_log_file())
+    setup_logging(
+        log_file or default_log_file(),
+        file_log_level=log_level,
+        console_log_level=console_log_level,
+    )
 
     try:
         resolved_path = _resolve_archive_path(archive_path)
@@ -357,6 +419,194 @@ def sync_activities_cmd(
         )
     except Exception as e:
         logger.error("Activity sync failed: %s", e)
+        raise typer.Exit(code=1) from e
+    finally:
+        client.close()
+
+
+@app.command(name="full-sync")
+def full_sync_cmd(
+    archive_path: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to Garmin export directory or ZIP archive",
+        ),
+    ],
+    fittrackee_url: Annotated[
+        Optional[str],
+        typer.Option(
+            "--fittrackee-url",
+            help="FitTrackee instance URL (env: FITTRACKEE_URL)",
+        ),
+    ] = None,
+    username: Annotated[
+        Optional[str],
+        typer.Option(
+            "--username",
+            help="FitTrackee username (env: FITTRACKEE_USERNAME)",
+        ),
+    ] = None,
+    password: Annotated[
+        Optional[str],
+        typer.Option(
+            "--password",
+            help="FitTrackee password (env: FITTRACKEE_PASSWORD)",
+        ),
+    ] = None,
+    mapping_file: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--mapping-file",
+            help="Path to custom equipment TOML mapping file",
+        ),
+    ] = None,
+    activity_mapping_file: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--activity-mapping-file",
+            help="Path to custom activity type TOML mapping file",
+        ),
+    ] = None,
+    with_gpx_only: Annotated[
+        bool,
+        typer.Option(
+            "--with-gpx-only",
+            help="Only sync activities that have a matching GPX/FIT/TCX file",
+        ),
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Show what would be synced without making changes",
+        ),
+    ] = False,
+    log_file: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--log-file",
+            help="Path to log file (env: LOG_FILE)",
+        ),
+    ] = None,
+    log_level: Annotated[
+        Optional[str],
+        typer.Option(
+            "--log-level",
+            help="File log level (env: LOG_LEVEL)",
+        ),
+    ] = None,
+    console_log_level: Annotated[
+        Optional[str],
+        typer.Option(
+            "--console-log-level",
+            help="Console log level (env: CONSOLE_LOG_LEVEL)",
+        ),
+    ] = None,
+) -> None:
+    setup_logging(
+        log_file or default_log_file(),
+        file_log_level=log_level,
+        console_log_level=console_log_level,
+    )
+
+    try:
+        resolved_path = _resolve_archive_path(archive_path)
+    except ArchiveError as e:
+        logger.error("Invalid archive path: %s", e)
+        raise typer.Exit(code=1) from e
+
+    url, user, pw = _resolve_config(
+        fittrackee_url, username, password
+    )
+
+    gear_files = find_gear_files(resolved_path)
+    all_gears: list[GarminGear] = []
+    for gf in gear_files:
+        all_gears.extend(parse_gear_file(gf))
+
+    gear_mapping = parse_all_gear_activity_mappings(resolved_path)
+    gear_by_pk: dict[int, GarminGear] = {}
+    for gf in gear_files:
+        for g in parse_gear_file(gf):
+            gear_by_pk[g.gear_pk] = g
+
+    try:
+        activities = parse_all_activities(resolved_path)
+    except Exception:
+        activities = []
+
+    eq_mapping = load_mapping(mapping_file)
+    act_mapping = load_activity_mapping(activity_mapping_file)
+
+    client = FitTrackeeClient(
+        base_url=url,
+        username=user,
+        password=pw,
+    )
+
+    try:
+        ft_types = [] if dry_run else client.get_equipment_types()
+
+        if all_gears:
+            typer.echo("=== Step 1/3: Sync equipments (force active) ===")
+            result_eq = sync_equipments(
+                all_gears, client, eq_mapping, ft_types,
+                dry_run=dry_run, force_active=True,
+            )
+            typer.echo(
+                f"Equipment sync: {result_eq.created} created, "
+                f"{result_eq.updated} updated, {result_eq.skipped} skipped, "
+                f"{result_eq.unmapped} unmapped"
+            )
+        else:
+            typer.echo("=== Step 1/3: No gear found, skipping ===")
+
+        if activities:
+            typer.echo(
+                f"=== Step 2/3: Sync activities ({len(activities)} found) ==="
+            )
+            sports = [] if dry_run else client.get_sports()
+            uploaded_files = build_uploaded_files_table(resolved_path)
+            ft_equipments: dict[str, FitTrackeeEquipment] = {}
+            if not dry_run:
+                ft_equipments = {
+                    eq.label: eq for eq in client.get_equipments()
+                }
+            result_act = sync_activities(
+                activities, client, act_mapping, sports, uploaded_files,
+                dry_run=dry_run,
+                with_gpx_only=with_gpx_only,
+                ft_equipments=ft_equipments,
+                gear_mapping=gear_mapping,
+                gear_by_pk=gear_by_pk,
+            )
+            typer.echo(
+                f"Activity sync: {result_act.created} created, "
+                f"{result_act.updated} updated, "
+                f"{result_act.skipped} skipped, {result_act.unmapped} unmapped, "
+                f"{result_act.errors} errors"
+            )
+        else:
+            typer.echo("=== Step 2/3: No activities found, skipping ===")
+
+        if all_gears:
+            typer.echo("=== Step 3/3: Sync equipments (actual state) ===")
+            ft_types = [] if dry_run else client.get_equipment_types()
+            result_eq2 = sync_equipments(
+                all_gears, client, eq_mapping, ft_types,
+                dry_run=dry_run, force_active=False,
+            )
+            typer.echo(
+                f"Equipment re-sync: {result_eq2.created} created, "
+                f"{result_eq2.updated} updated, {result_eq2.skipped} skipped, "
+                f"{result_eq2.unmapped} unmapped"
+            )
+        else:
+            typer.echo("=== Step 3/3: No gear found, skipping ===")
+
+        typer.echo("Full sync complete.")
+    except Exception as e:
+        logger.error("Full sync failed: %s", e)
         raise typer.Exit(code=1) from e
     finally:
         client.close()

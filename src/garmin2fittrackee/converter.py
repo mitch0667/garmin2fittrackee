@@ -156,6 +156,7 @@ def sync_equipments(
     ft_types: list[FitTrackeeEquipmentType],
     *,
     dry_run: bool = False,
+    force_active: bool = False,
 ) -> EquipmentSyncResult:
     check_duplicate_labels(gears)
 
@@ -184,6 +185,8 @@ def sync_equipments(
 
         for gear in gears:
             desired = convert_gear(gear, mapping, ft_types)
+            if desired is not None and force_active:
+                desired = desired.model_copy(update={"is_active": True})
             if desired is None:
                 unmapped += 1
                 progress.update(
@@ -462,6 +465,12 @@ def sync_activities(
                     sport_id,
                     equipment_ids=equipment_ids or None,
                 )
+                logger.info(
+                    "Activity id=%d: pushing workout_date='%s' "
+                    "to FitTrackee for update (from json start_time_local)",
+                    activity.activity_id,
+                    desired.workout_date,
+                )
                 patch = _needs_workout_update(duplicate, desired)
                 if patch is not None:
                     logger.info(
@@ -492,6 +501,16 @@ def sync_activities(
             matching_file = find_matching_file(
                 activity_start, uploaded_files
             )
+            logger.info(
+                "Activity id=%d '%s' (type=%s, json_start_local=%s, "
+                "json_start_gmt=%s) -> file: %s",
+                activity.activity_id,
+                activity.title or activity.activity_type_key,
+                activity.activity_type_key,
+                activity.start_time_local,
+                activity.start_time_gmt,
+                matching_file.name if matching_file else "none",
+            )
 
             if with_gpx_only and matching_file is None:
                 logger.debug(
@@ -519,6 +538,12 @@ def sync_activities(
             workout_data = convert_activity(
                 activity, sport_id,
                 equipment_ids=equipment_ids or None,
+            )
+            logger.info(
+                "Activity id=%d: pushing workout_date='%s' "
+                "to FitTrackee (from json start_time_local)",
+                activity.activity_id,
+                workout_data.workout_date,
             )
 
             try:

@@ -12,9 +12,24 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ## Usage
-Currently the tool has to be executed in two different steps:
-1. First, sync equipments
-2. Second, push activities
+### Full sync (recommended)
+
+Runs the complete sync in a single command: syncs equipments (force active), then syncs activities, then re-syncs equipments with their actual Garmin status. This ensures workouts can be created even if equipment is marked inactive.
+
+```bash
+uv run garmin2fittrackee full-sync <path_to_extracted_archive_or_zip> [OPTIONS]
+```
+
+Options:
+- `--fittrackee-url <url>` — FitTrackee instance URL (env: `FITTRACKEE_URL`)
+- `--username <user>` — FitTrackee username (env: `FITTRACKEE_USERNAME`)
+- `--password <pass>` — FitTrackee password (env: `FITTRACKEE_PASSWORD`)
+- `--mapping-file <path>` — Custom equipment TOML mapping file (default: built-in)
+- `--activity-mapping-file <path>` — Custom activity type TOML mapping file (default: built-in)
+- `--with-gpx-only` — Only sync activities that have a matching GPX/FIT/TCX file
+- `--dry-run` — Show what would be synced without making changes
+- `--log-level <level>` — File log level (env: `LOG_LEVEL`, default: `DEBUG`)
+- `--console-log-level <level>` — Console log level (env: `CONSOLE_LOG_LEVEL`, default: `CRITICAL`)
 
 ### Sync equipments to FitTrackee
 
@@ -27,7 +42,10 @@ Options:
 - `--username <user>` — FitTrackee username (env: `FITTRACKEE_USERNAME`)
 - `--password <pass>` — FitTrackee password (env: `FITTRACKEE_PASSWORD`)
 - `--mapping-file <path>` — Custom TOML mapping file (default: built-in)
+- `--force-active` — Force all equipments as active regardless of Garmin status
 - `--dry-run` — Show what would be synced without making changes
+- `--log-level <level>` — File log level (env: `LOG_LEVEL`, default: `DEBUG`)
+- `--console-log-level <level>` — Console log level (env: `CONSOLE_LOG_LEVEL`, default: `CRITICAL`)
 
 The command reads `*_gear.json` files from the extracted archive, maps Garmin gear types to FitTrackee equipment types, and creates or updates equipment accordingly.
 
@@ -55,6 +73,8 @@ Options:
 - `--activity-mapping-file <path>` — Custom activity type TOML mapping file (default: built-in)
 - `--with-gpx-only` — Only sync activities that have a matching GPX/FIT/TCX file. Files without GPS data (e.g. indoor workouts) are also skipped.
 - `--dry-run` — Show what would be synced without making changes
+- `--log-level <level>` — File log level (env: `LOG_LEVEL`, default: `DEBUG`)
+- `--console-log-level <level>` — Console log level (env: `CONSOLE_LOG_LEVEL`, default: `CRITICAL`)
 
 The command reads `*_summarizedActivities.json` files from the extracted archive, maps Garmin activity types to FitTrackee sports, and creates workouts via the FitTrackee API. Activities already present (matched by start time ±10 seconds) are skipped.
 
@@ -127,7 +147,7 @@ Requires `curl` and `jq`. Paginates through all workouts and deletes them one by
 
 5. **Workout upload fails with "only one piece of equipment per type"** — Activities associated with multiple equipment items of the same type (e.g., two pairs of shoes) are rejected by FitTrackee. The tool should send at most one equipment item per type.
 
-6. **Workout upload fails when equipment is inactive** — Workouts fail to create when the associated equipment is marked as inactive in FitTrackee. The tool should handle inactive equipment gracefully (skip or warn).
+   6. **Workout upload fails when equipment is inactive** — Workouts fail to create when the associated equipment is marked as inactive in FitTrackee. Using the `full-sync` command handles this by force-activating equipment before syncing activities, then restoring the actual state.
 
 7. **Mismatch in duration, distance, and max speed** — Synced activities may show incorrect values for duration, distance, max speed, and other metrics compared to the original Garmin data. FitTrackee may rebuild it from .gpx, .tcx and .fit files with some variations compared to Garmin.
 
