@@ -91,12 +91,52 @@ class TestResolveEquipmentTypeId:
 
 
 class TestLoadActivityMapping:
+    NEW_MAPPINGS = {
+        "backcountry_skiing": "Skiing (Cross Country)",
+        "bouldering": "Other",
+        "driving_general": "Other",
+        "e_bike_fitness": "Cycling (Virtual)",
+        "e_bike_mountain": "Mountain Biking (Electric)",
+        "fitness_equipment": "Other",
+        "gravel_cycling": "Mountain Biking",
+        "hiit": "Other",
+        "indoor_cardio": "Other",
+        "indoor_rowing": "Other",
+        "indoor_running": "Running",
+        "lap_swimming": "Open Water Swimming",
+        "other": "Other",
+        "paddelball": "Padel (Outdoor)",
+        "pilates": "Other",
+        "rock_climbing": "Other",
+        "snorkeling": "Open Water Swimming",
+        "snow_shoe_ws": "Snowshoes",
+        "stair_climbing": "Other",
+        "street_running": "Running",
+        "tennis_v2": "Padel (Outdoor)",
+        "winter_sports": "Other",
+    }
+
     def test_load_default_mapping(self) -> None:
         mapping = load_activity_mapping()
         assert "running" in mapping
         assert mapping["running"] == "Running"
         assert "cycling" in mapping
         assert "hiking" in mapping
+
+    def test_new_mappings_present(self) -> None:
+        mapping = load_activity_mapping()
+        for key, value in self.NEW_MAPPINGS.items():
+            assert key in mapping, f"Missing mapping for '{key}'"
+            assert mapping[key] == value, (
+                f"Mapping for '{key}': expected '{value}', got '{mapping[key]}'"
+            )
+
+    def test_total_mapping_count(self) -> None:
+        mapping = load_activity_mapping()
+        expected_count = 21 + len(self.NEW_MAPPINGS)
+        assert len(mapping) == expected_count, (
+            f"Expected {expected_count} mappings, got {len(mapping)}"
+        )
 
     def test_default_file_exists(self) -> None:
         assert DEFAULT_ACTIVITY_MAPPING_FILE.exists()
