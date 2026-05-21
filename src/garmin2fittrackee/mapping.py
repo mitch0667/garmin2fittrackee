@@ -33,21 +33,44 @@ def load_mapping(config_path: Path | None = None) -> dict[str, str]:
     return dict(mapping)
 
 
+def _find_type_id_by_label(
+    label: str, ft_types: list[FitTrackeeEquipmentType]
+) -> int | None:
+    for ft_type in ft_types:
+        if ft_type.label.lower() == label.lower() and ft_type.is_active:
+            return ft_type.id
+    return None
+
+
 def resolve_equipment_type_id(
     gear_type_name: str,
     mapping: dict[str, str],
     ft_types: list[FitTrackeeEquipmentType],
+    fallback_label: str = "Misc",
 ) -> int | None:
     mapped_label = mapping.get(gear_type_name)
     if mapped_label is None:
-        logger.debug(
-            "No mapping for Garmin gear type '%s'", gear_type_name
+        fallback_id = _find_type_id_by_label(fallback_label, ft_types)
+        if fallback_id is not None:
+            logger.info(
+                "No mapping for Garmin gear type '%s', "
+                "using fallback type '%s' (id=%d)",
+                gear_type_name,
+                fallback_label,
+                fallback_id,
+            )
+            return fallback_id
+        logger.warning(
+            "No mapping for Garmin gear type '%s' and "
+            "fallback type '%s' not found or inactive, skipping",
+            gear_type_name,
+            fallback_label,
         )
         return None
 
-    for ft_type in ft_types:
-        if ft_type.label.lower() == mapped_label.lower() and ft_type.is_active:
-            return ft_type.id
+    type_id = _find_type_id_by_label(mapped_label, ft_types)
+    if type_id is not None:
+        return type_id
 
     logger.debug(
         "FitTrackee equipment type '%s' not found or inactive "

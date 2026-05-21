@@ -89,9 +89,10 @@ def convert_gear(
     gear: GarminGear,
     mapping: dict[str, str],
     ft_types: list[FitTrackeeEquipmentType],
+    fallback_label: str = "Misc",
 ) -> FitTrackeeEquipmentCreate | None:
     type_id = resolve_equipment_type_id(
-        gear.gear_type_name, mapping, ft_types
+        gear.gear_type_name, mapping, ft_types, fallback_label=fallback_label
     )
     if type_id is None:
         logger.warning(
@@ -164,6 +165,7 @@ def sync_equipments(
     *,
     dry_run: bool = False,
     force_active: bool = False,
+    fallback_label: str = "Misc",
 ) -> EquipmentSyncResult:
     check_duplicate_labels(gears)
 
@@ -191,7 +193,9 @@ def sync_equipments(
         )
 
         for gear in gears:
-            desired = convert_gear(gear, mapping, ft_types)
+            desired = convert_gear(
+                gear, mapping, ft_types, fallback_label=fallback_label
+            )
             if desired is not None and force_active:
                 desired = desired.model_copy(update={"is_active": True})
             if desired is None:
