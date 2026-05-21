@@ -345,6 +345,9 @@ def _format_workout_date(date_str: str) -> str:
     return dt.strftime("%Y-%m-%d %H:%M")
 
 
+MINIMUM_DISTANCE_KM = 0.001
+
+
 def convert_activity(
     activity: GarminActivity,
     sport_id: int,
@@ -355,10 +358,21 @@ def convert_activity(
     ascent = activity.elevation_gain_m if has_ascent or has_descent else None
     descent = activity.elevation_loss_m if has_ascent or has_descent else None
 
+    distance = activity.distance_km
+    if distance == 0.0:
+        logger.warning(
+            "[ZERO-DISTANCE] '%s' (%s) — distance is 0.0 km, "
+            "converting to %.3f km to satisfy FitTrackee validation",
+            activity.title or activity.activity_type_key,
+            activity.start_time_local,
+            MINIMUM_DISTANCE_KM,
+        )
+        distance = MINIMUM_DISTANCE_KM
+
     return FitTrackeeWorkoutCreateNoGpx(
         sport_id=sport_id,
         duration=activity.duration_seconds,
-        distance=activity.distance_km,
+        distance=distance,
         workout_date=_format_workout_date(activity.start_time_local),
         title=activity.title,
         description=_build_description(activity),
@@ -576,59 +590,68 @@ def sync_activities(
 
             try:
                 if matching_file is not None and not dry_run:
-                    upload_file = matching_file
-                    if activity.device_product_name:
-                        ext = matching_file.suffix.lower()
-                        if ext == ".gpx":
-                            if _staging_dir is None:
-                                _staging_dir = tempfile.mkdtemp(
-                                    prefix="gpx_patched_"
-                                )
-                            upload_file = patch_gpx_creator(
-                                matching_file,
-                                activity.device_product_name,
-                                _staging_dir,
-                            )
-                        elif ext == ".tcx":
-                            if _staging_dir is None:
-                                _staging_dir = tempfile.mkdtemp(
-                                    prefix="gpx_patched_"
-                                )
-                            upload_file = patch_tcx_creator(
-                                matching_file,
-                                activity.device_product_name,
-                                _staging_dir,
-                            )
-                        elif ext == ".fit":
-                            product_id = resolve_product_id(
-                                activity.device_product_name
-                            )
-                            if product_id is not None:
+                    if not has_gps_data(matching_file):
+                        logger.warning(
+                            "[NO-GPS] '%s' — file has no GPS data (%s), "
+                            "creating without file",
+                            activity.title or activity.activity_type_key,
+                            matching_file.name,
+                        )
+                        client.create_workout_no_gpx(workout_data)
+                    else:
+                        upload_file = matching_file
+                        if activity.device_product_name:
+                            ext = matching_file.suffix.lower()
+                            if ext == ".gpx":
                                 if _staging_dir is None:
                                     _staging_dir = tempfile.mkdtemp(
                                         prefix="gpx_patched_"
                                     )
-                                patched = patch_fit_product(
+                                upload_file = patch_gpx_creator(
                                     matching_file,
-                                    product_id,
+                                    activity.device_product_name,
                                     _staging_dir,
                                 )
-                                if patched is not None:
-                                    upload_file = patched
-                                    logger.info(
-                                        "Patched FIT product ID to %d (%s)",
-                                        product_id,
-                                        activity.device_product_name,
+                            elif ext == ".tcx":
+                                if _staging_dir is None:
+                                    _staging_dir = tempfile.mkdtemp(
+                                        prefix="gpx_patched_"
                                     )
-                    logger.info(
-                        "[CREATE] '%s' with file %s (equipment: %s)",
-                        activity.title or activity.activity_type_key,
-                        upload_file,
-                        equipment_ids or [],
-                    )
-                    client.create_workout_with_file(
-                        workout_data, str(upload_file)
-                    )
+                                upload_file = patch_tcx_creator(
+                                    matching_file,
+                                    activity.device_product_name,
+                                    _staging_dir,
+                                )
+                            elif ext == ".fit":
+                                product_id = resolve_product_id(
+                                    activity.device_product_name
+                                )
+                                if product_id is not None:
+                                    if _staging_dir is None:
+                                        _staging_dir = tempfile.mkdtemp(
+                                            prefix="gpx_patched_"
+                                        )
+                                    patched = patch_fit_product(
+                                        matching_file,
+                                        product_id,
+                                        _staging_dir,
+                                    )
+                                    if patched is not None:
+                                        upload_file = patched
+                                        logger.info(
+                                            "Patched FIT product ID to %d (%s)",
+                                            product_id,
+                                            activity.device_product_name,
+                                        )
+                        logger.info(
+                            "[CREATE] '%s' with file %s (equipment: %s)",
+                            activity.title or activity.activity_type_key,
+                            upload_file,
+                            equipment_ids or [],
+                        )
+                        client.create_workout_with_file(
+                            workout_data, str(upload_file)
+                        )
                 elif not dry_run:
                     logger.info(
                         "[CREATE] '%s' (no file, equipment: %s)",
