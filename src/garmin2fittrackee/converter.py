@@ -94,6 +94,13 @@ def convert_gear(
         gear.gear_type_name, mapping, ft_types
     )
     if type_id is None:
+        logger.warning(
+            "[UNMAPPED] '%s' (type='%s', status='%s', pk=%d)",
+            gear.label,
+            gear.gear_type_name,
+            gear.gear_status_name,
+            gear.gear_pk,
+        )
         return None
 
     return FitTrackeeEquipmentCreate(

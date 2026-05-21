@@ -31,6 +31,9 @@ def setup_logging(
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
 
+    for name in ("httpcore", "httpcore.http11", "httpcore.connection", "httpx"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
     console_handler = logging.StreamHandler()
     console_handler.setLevel(
         _resolve_level(

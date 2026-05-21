@@ -98,10 +98,21 @@ class TestConvertGear:
         assert result is not None
         assert result.is_active is False
 
-    def test_convert_unmapped_type_returns_none(self) -> None:
-        gear = _gear(type_name="Other")
-        result = convert_gear(gear, MAPPING, FT_TYPES)
+    def test_convert_unmapped_type_logs_warning(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        gear = _gear(type_name="Other", model="My Headlamp")
+        with caplog.at_level(
+            logging.WARNING, logger="garmin2fittrackee.converter"
+        ):
+            result = convert_gear(gear, MAPPING, FT_TYPES)
         assert result is None
+        unmapped_msgs = [
+            r for r in caplog.records if "[UNMAPPED]" in r.message
+        ]
+        assert len(unmapped_msgs) == 1
+        assert "My Headlamp" in unmapped_msgs[0].message
+        assert "Other" in unmapped_msgs[0].message
 
     def test_convert_bike(self) -> None:
         gear = _gear(type_name="Bike", model="Canyon")
@@ -163,15 +174,22 @@ class TestSyncEquipments:
         assert result.updated == 1
         client.update_equipment.assert_called_once()
 
-    def test_skips_unmapped_types(self) -> None:
+    def test_skips_unmapped_types(self, caplog: pytest.LogCaptureFixture) -> None:
         client = MagicMock()
         client.get_equipments.return_value = []
 
-        gears = [_gear(type_name="Other")]
-        result = sync_equipments(gears, client, MAPPING, FT_TYPES)
+        gears = [_gear(type_name="Other", model="Headlamp")]
+        with caplog.at_level(logging.WARNING, logger="garmin2fittrackee.converter"):
+            result = sync_equipments(gears, client, MAPPING, FT_TYPES)
         assert isinstance(result, EquipmentSyncResult)
         assert result.unmapped == 1
         client.create_equipment.assert_not_called()
+        unmapped_msgs = [
+            r for r in caplog.records if "[UNMAPPED]" in r.message
+        ]
+        assert len(unmapped_msgs) == 1
+        assert "Headlamp" in unmapped_msgs[0].message
+        assert "Other" in unmapped_msgs[0].message
 
     def test_dry_run_does_not_call_api(self) -> None:
         client = MagicMock()

@@ -40,8 +40,8 @@ def resolve_equipment_type_id(
 ) -> int | None:
     mapped_label = mapping.get(gear_type_name)
     if mapped_label is None:
-        logger.warning(
-            "No mapping for Garmin gear type '%s', skipping", gear_type_name
+        logger.debug(
+            "No mapping for Garmin gear type '%s'", gear_type_name
         )
         return None
 
@@ -49,9 +49,9 @@ def resolve_equipment_type_id(
         if ft_type.label.lower() == mapped_label.lower() and ft_type.is_active:
             return ft_type.id
 
-    logger.warning(
-        "FitTrackee equipment type '%s' not found or inactive, "
-        "skipping Garmin gear type '%s'",
+    logger.debug(
+        "FitTrackee equipment type '%s' not found or inactive "
+        "for Garmin gear type '%s'",
         mapped_label,
         gear_type_name,
     )

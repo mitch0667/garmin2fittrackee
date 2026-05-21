@@ -6,12 +6,17 @@ import pytest
 
 from garmin2fittrackee.logging_setup import setup_logging
 
+_THIRD_PARTY_LOGGERS = ("httpcore", "httpcore.http11", "httpcore.connection", "httpx")
+
 
 def _reset_logging() -> None:
     root = logging.getLogger()
     for handler in root.handlers[:]:
         root.removeHandler(handler)
     root.setLevel(logging.NOTSET)
+
+    for name in _THIRD_PARTY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.NOTSET)
 
     import garmin2fittrackee.logging_setup as mod
 
@@ -207,3 +212,45 @@ class TestSetupLogging:
         _reset_logging()
         with pytest.raises(ValueError, match="Invalid log level"):
             setup_logging(console_log_level="NONEXISTENT")
+
+    def test_httpcore_loggers_set_to_warning(self) -> None:
+        _reset_logging()
+        setup_logging()
+
+        for name in _THIRD_PARTY_LOGGERS:
+            assert logging.getLogger(name).level == logging.WARNING
+
+    def test_httpcore_debug_logs_suppressed(self, tmp_path: Path) -> None:
+        _reset_logging()
+        log_path = tmp_path / "test.log"
+        setup_logging(log_path)
+
+        httpcore_logger = logging.getLogger("httpcore.http11")
+        httpcore_logger.debug("send request headers")
+        httpcore_logger.debug("receive response headers")
+
+        content = log_path.read_text()
+        assert "send request headers" not in content
+        assert "receive response headers" not in content
+
+    def test_httpcore_warning_logs_not_suppressed(self, tmp_path: Path) -> None:
+        _reset_logging()
+        log_path = tmp_path / "test.log"
+        setup_logging(log_path)
+
+        httpcore_logger = logging.getLogger("httpcore.connection")
+        httpcore_logger.warning("connection pool is full")
+
+        content = log_path.read_text()
+        assert "connection pool is full" in content
+
+    def test_httpx_logger_suppressed(self, tmp_path: Path) -> None:
+        _reset_logging()
+        log_path = tmp_path / "test.log"
+        setup_logging(log_path)
+
+        httpx_logger = logging.getLogger("httpx")
+        httpx_logger.debug("HTTP request")
+
+        content = log_path.read_text()
+        assert "HTTP request" not in content
