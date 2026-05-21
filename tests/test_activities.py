@@ -1,4 +1,5 @@
 import json
+import logging
 import struct
 import zipfile
 from datetime import datetime, timezone
@@ -596,6 +597,58 @@ class TestBuildUploadedFilesTable:
         table = build_uploaded_files_table(tmp_path)
         assert len(table) == 3
 
+    def test_multiple_files_same_timestamp_keeps_largest(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        uploaded = tmp_path / "DI_CONNECT" / "DI-Connect-Uploaded-Files"
+        uploaded.mkdir(parents=True)
+
+        dt = datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
+
+        gpx_content = """<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="test">
+  <trk>
+    <trkseg>
+      <trkpt lat="48.8566" lon="2.3522">
+        <time>2024-01-15T08:00:00Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>"""
+        gpx_file = uploaded / "test.gpx"
+        gpx_file.write_text(gpx_content)
+
+        fit_data = _build_fit_file_id_bytes(time_created=dt)
+        fit_file = uploaded / "test.fit"
+        fit_file.write_bytes(fit_data + b"\x00" * 500)
+
+        with caplog.at_level(logging.WARNING):
+            table = build_uploaded_files_table(tmp_path)
+
+        assert len(table) == 1
+        kept_path = list(table.values())[0]
+        assert kept_path == fit_file
+        assert "[MULTI-MATCH]" in caplog.text
+        assert "test.fit" in caplog.text
+        assert "test.gpx" in caplog.text
+
+    def test_multiple_files_same_timestamp_no_warning_for_single(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        uploaded = tmp_path / "DI_CONNECT" / "DI-Connect-Uploaded-Files"
+        uploaded.mkdir(parents=True)
+
+        dt = datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
+        fit_data = _build_fit_file_id_bytes(time_created=dt)
+        fit_file = uploaded / "test.fit"
+        fit_file.write_bytes(fit_data)
+
+        with caplog.at_level(logging.WARNING):
+            table = build_uploaded_files_table(tmp_path)
+
+        assert len(table) == 1
+        assert "[MULTI-MATCH]" not in caplog.text
+
 
 class TestExtractTcxStartTime:
     def test_extracts_from_id(self, tmp_path: Path) -> None:
@@ -695,6 +748,54 @@ class TestFindMatchingFile:
         dt = datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
         result = find_matching_file(dt, {})
         assert result is None
+
+    def test_multiple_matches_keeps_largest(self, tmp_path: Path) -> None:
+        dt = datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
+        small = tmp_path / "small.fit"
+        small.write_bytes(b"\x00" * 100)
+        large = tmp_path / "large.gpx"
+        large.write_bytes(b"\x00" * 500)
+
+        dt2 = datetime(2024, 1, 15, 8, 0, 5, tzinfo=timezone.utc)
+        table = {dt: small, dt2: large}
+
+        result = find_matching_file(dt, table, margin_seconds=10)
+        assert result == large
+
+    def test_multiple_matches_logs_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        dt = datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
+        small = tmp_path / "small.fit"
+        small.write_bytes(b"\x00" * 100)
+        large = tmp_path / "large.gpx"
+        large.write_bytes(b"\x00" * 500)
+
+        dt2 = datetime(2024, 1, 15, 8, 0, 5, tzinfo=timezone.utc)
+        table = {dt: small, dt2: large}
+
+        with caplog.at_level(logging.WARNING):
+            find_matching_file(
+                dt, table, margin_seconds=10, activity_name="Morning Run"
+            )
+
+        assert "[MULTI-MATCH]" in caplog.text
+        assert "Morning Run" in caplog.text
+        assert "large.gpx" in caplog.text
+        assert "small.fit" in caplog.text
+
+    def test_single_match_no_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        dt = datetime(2024, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
+        path = tmp_path / "test.gpx"
+        path.write_bytes(b"\x00" * 100)
+
+        table = {dt: path}
+        with caplog.at_level(logging.WARNING):
+            find_matching_file(dt, table)
+
+        assert "[MULTI-MATCH]" not in caplog.text
 
 
 class TestExtractActivityFilesFromZips:

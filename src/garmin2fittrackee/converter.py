@@ -517,7 +517,8 @@ def sync_activities(
                 continue
 
             matching_file = find_matching_file(
-                activity_start, uploaded_files
+                activity_start, uploaded_files,
+                activity_name=activity.title or activity.activity_type_key,
             )
             logger.info(
                 "Activity id=%d '%s' (type=%s, json_start_local=%s, "

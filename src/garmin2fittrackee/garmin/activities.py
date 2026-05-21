@@ -376,7 +376,7 @@ def build_uploaded_files_table(
     extracted_dir: Path,
 ) -> dict[datetime, Path]:
     files = find_uploaded_activity_files(extracted_dir)
-    table: dict[datetime, Path] = {}
+    multi: dict[datetime, list[Path]] = {}
 
     for f in files:
         start_time: datetime | None = None
@@ -389,7 +389,23 @@ def build_uploaded_files_table(
             start_time = _extract_tcx_start_time(f)
 
         if start_time is not None:
-            table[start_time] = f
+            multi.setdefault(start_time, []).append(f)
+
+    table: dict[datetime, Path] = {}
+    for ts, paths in multi.items():
+        if len(paths) > 1:
+            kept = max(paths, key=lambda p: p.stat().st_size)
+            discarded = [p.name for p in paths if p != kept]
+            logger.warning(
+                "[MULTI-MATCH] activity_start=%s — multiple files share the same "
+                "start time, keeping '%s' (discarded: %s)",
+                ts.strftime("%Y-%m-%d %H:%M:%S"),
+                kept.name,
+                ", ".join(f"'{n}'" for n in discarded),
+            )
+            table[ts] = kept
+        else:
+            table[ts] = paths[0]
 
     logger.info("Built uploaded files table with %d entries", len(table))
     return table
@@ -399,18 +415,45 @@ def find_matching_file(
     activity_start: datetime,
     files_table: dict[datetime, Path],
     margin_seconds: int = 10,
+    activity_name: str | None = None,
 ) -> Path | None:
     offsets = [
         timedelta(hours=h)
         for h in range(-12, 15)
     ]
+    matches: list[tuple[datetime, Path]] = []
     for offset in offsets:
         adjusted = activity_start - offset
         for file_start, file_path in files_table.items():
             diff = abs((adjusted - file_start).total_seconds())
             if diff <= margin_seconds:
-                return file_path
-    return None
+                matches.append((file_start, file_path))
+
+    if not matches:
+        return None
+
+    if len(matches) > 1:
+        kept = max(matches, key=lambda m: m[1].stat().st_size)
+        candidates = [
+            f"'{p.name}' at {ts.strftime('%Y-%m-%d %H:%M:%S')}"
+            for ts, p in matches
+            if (ts, p) != kept
+        ]
+        label = (
+            f"activity '{activity_name}'"
+            if activity_name
+            else f"activity_start={activity_start.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        logger.warning(
+            "[MULTI-MATCH] %s — multiple files within margin, keeping '%s' "
+            "(candidates: %s)",
+            label,
+            kept[1].name,
+            ", ".join(candidates),
+        )
+        return kept[1]
+
+    return matches[0][1]
 
 
 FIT_RECORD_MSG = 20
